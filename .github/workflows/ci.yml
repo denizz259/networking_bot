@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  ci-checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Получаем код из репозитория
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Устанавливаем Python (тот же майнор, что ты используешь локально)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 3. Ставим зависимости проекта + dev-инструменты
+      - name: Install deps
+        run: |
+          pip install --upgrade pip
+          pip install -r src/requirements.txt
+          pip install ruff pytest
+
+      # 4. Линтер (ruff = быстрый формат/анализ кода)
+      - name: Lint with ruff
+        run: |
+          ruff check src
+
+      # 5. Smoke-тест питона
+      # Объяснение: при импорте bot.main у нас тянется config.py,
+      # который требует переменную окружения TG_API.
+      # Мы подставляем фейковую, чтобы импорт не рухнул.
+      - name: Import smoke test
+        env:
+          TG_API: "dummy-token"
+          DATABASE_URL: "sqlite:///data/db.sqlite"
+        run: |
+          python -c "import bot.main" -q
+        working-directory: src
+
+      # 6. Пробуем собрать Docker-образ
+      # Это гарантирует, что Dockerfile валиден.
+      - name: Build Docker image
+        run: |
+          docker build -t network-bot-ci-test:latest ./src
