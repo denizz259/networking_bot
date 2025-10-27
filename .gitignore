@@ -1,0 +1,18 @@
+# === Python cache / compiled ===
+__pycache__/
+*.pyc
+
+# === Virtualenvs (локальная разработка) ===
+.venv/
+venv/
+env/
+
+# === Local environment files (секреты) ===
+.env
+.env.prod
+
+# === SQLite база (продовые данные юзеров) ===
+data/db.sqlite
+
+# === Docker noise ===
+*.log

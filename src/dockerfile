@@ -1,0 +1,22 @@
+# Используем официальный минимальный образ Python
+FROM python:3.12-slim
+
+# Чтобы Python сразу писал логи в stdout/stderr без буфера
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Сначала копируем requirements.txt и ставим зависимости
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Потом копируем исходники
+COPY bot ./bot
+COPY config.py .
+
+# По умолчанию db.sqlite будет внутри контейнера в /app
+# В проде мы будем монтировать volume или использовать Postgres.
+# Здесь для простоты оставим sqlite-файл рядом.
+
+CMD ["python", "-m", "bot.main"]
