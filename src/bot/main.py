@@ -9,11 +9,19 @@ from aiogram.types import (
 )
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-
 from config import BOT_TOKEN
 from . import db
 from . import storage
 from .states import CreateCategory, AddContact
+from .logging_setup import configure_logging
+from .telemetry import start_health_server
+
+logger = configure_logging()
+logger.info("bot_startup", extra={"stage": "startup"})
+
+health_server = start_health_server(port=8000)
+logger.info("health_server_started", extra={"port": 8000})
+
 
 router = Router()
 
@@ -468,13 +476,24 @@ async def cb_delete_category(callback: CallbackQuery, state: FSMContext):
 # ======================
 
 async def main():
+    
     await db.init_db()
-
-    bot = Bot(token=BOT_TOKEN)
-    dp = Dispatcher(storage=MemoryStorage())
-    dp.include_router(router)
-
-    await dp.start_polling(bot)
+    try:
+        bot = Bot(token=BOT_TOKEN)
+        dp = Dispatcher(storage=MemoryStorage())
+        dp.include_router(router)
+        logger.info("bot_running")
+        await dp.start_polling(bot)
+    except Exception as exc:
+        logger.exception("bot_crashed", extra={"error": str(exc)})
+        raise
+    
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("bot_shutdown", extra={"reason": "KeyboardInterrupt"})
+    except Exception as exc:
+        logger.exception("bot_crashed", extra={"error": str(exc)})
+        raise

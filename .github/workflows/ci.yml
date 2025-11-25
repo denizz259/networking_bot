@@ -9,44 +9,89 @@ on:
 jobs:
   ci-checks:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
 
     steps:
       # 1. Получаем код из репозитория
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Устанавливаем Python (тот же майнор, что ты используешь локально)
-      - name: Set up Python
+      # 2. Ставим Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # 3. Ставим зависимости проекта + dev-инструменты
-      - name: Install deps
+      # 3. Ставим зависимости (prod + dev)
+      - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r src/requirements.txt
-          pip install ruff pytest
+          pip install -r src/requirements-dev.txt
 
-      # 4. Линтер (ruff = быстрый формат/анализ кода)
-      - name: Lint with ruff
+      # 4. Ruff — линтер
+      - name: Ruff lint
+        run: ruff check src
+
+      # 5. Bandit — статический анализ безопасности
+      - name: Bandit security scan
+        run: bandit -r src/bot -ll || true  # пока как предупреждение
+
+      # 6. Pytest — юнит-тесты
+      - name: Run tests
+        env:
+          TG_API: "dummy-token"
+          DATABASE_URL: "sqlite:///:memory:"
         run: |
-          ruff check src
+          pytest -q --maxfail=1 --disable-warnings --cov=src
 
-      # 5. Smoke-тест питона
-      # Объяснение: при импорте bot.main у нас тянется config.py,
-      # который требует переменную окружения TG_API.
-      # Мы подставляем фейковую, чтобы импорт не рухнул.
+      # 7. Import smoke test — проверяем, что бот хотя бы импортируется
       - name: Import smoke test
         env:
           TG_API: "dummy-token"
           DATABASE_URL: "sqlite:///data/db.sqlite"
         run: |
-          python -c "import bot.main" -q
-        working-directory: src
-
-      # 6. Пробуем собрать Docker-образ
-      # Это гарантирует, что Dockerfile валиден.
+          python -c "import bot.main"
+      
+      # 8. Сборка Docker-образа — sanity check Dockerfile
       - name: Build Docker image
         run: |
-          docker build -t network-bot-ci-test:latest ./src
+          docker build -t network-bot-ci-test:latest .
+
+  trivy-scan:
+    needs: ci-checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for Trivy scan
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: local/network-bot:ci
+
+      - name: Trivy FS scan (repository)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          format: table
+          ignore-unfixed: true
+          exit-code: 0        # сначала только отчёт, не ломаем билд
+          severity: CRITICAL,HIGH
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: local/network-bot:ci
+          format: table
+          ignore-unfixed: true
+          exit-code: 0
+          severity: CRITICAL,HIGH

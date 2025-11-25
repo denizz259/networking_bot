@@ -16,3 +16,6 @@ data/db.sqlite
 
 # === Docker noise ===
 *.log
+
+# aws key
+myaws.pem
